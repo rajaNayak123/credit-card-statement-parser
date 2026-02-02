@@ -1,9 +1,8 @@
 import fs from 'fs/promises';
-// Use createRequire to import CommonJS modules in an ES Module project
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
 import { PDFDocument } from 'pdf-lib';
+import { PDFExtract } from 'pdf.js-extract';
+
+const pdfExtract = new PDFExtract();
 
 /**
  * Parse PDF and extract text content
@@ -11,29 +10,35 @@ import { PDFDocument } from 'pdf-lib';
  */
 export const parsePDF = async (filePath) => {
   try {
-    const dataBuffer = await fs.readFile(filePath);
+    const data = await pdfExtract.extract(filePath);
     
-    // First, try standard text extraction
-    const pdfData = await pdfParse(dataBuffer);
+    // Extract text from all pages
+    let text = '';
+    data.pages.forEach(page => {
+      page.content.forEach(item => {
+        if (item.str) {
+          text += item.str + ' ';
+        }
+      });
+      text += '\n';
+    });
     
     // Check if we got meaningful text (text-based PDF)
-    if (pdfData.text && pdfData.text.trim().length > 100) {
+    if (text.trim().length > 100) {
       return {
-        text: pdfData.text,
-        numPages: pdfData.numpages,
+        text: text.trim(),
+        numPages: data.pages.length,
         isScanned: false,
-        metadata: pdfData.info,
+        metadata: data.meta,
       };
     }
     
     // If very little text, might be scanned PDF
-    // For scanned PDFs, we'll still send whatever text we got
-    // Gemini can handle both scenarios
     return {
-      text: pdfData.text || 'Scanned PDF - No text extracted. Image data present.',
-      numPages: pdfData.numpages,
+      text: text.trim() || 'Scanned PDF - No text extracted. Image data present.',
+      numPages: data.pages.length,
       isScanned: true,
-      metadata: pdfData.info,
+      metadata: data.meta,
       note: 'This appears to be a scanned PDF. Consider using OCR for better results.',
     };
     
