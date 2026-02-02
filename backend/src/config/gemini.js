@@ -1,7 +1,22 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from "@google/genai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+let ai = null;
 
 export const getGeminiModel = () => {
-  return genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  // Lazy initialization - only create the client when first needed
+  if (!ai) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    
+    console.log('🔑 Gemini API Key Status:', apiKey ? '✅ Loaded' : '❌ Missing');
+    
+    if (!apiKey) {
+      console.error('❌ GEMINI_API_KEY is not set in environment variables!');
+      throw new Error('GEMINI_API_KEY environment variable is required');
+    }
+    
+    ai = new GoogleGenAI({ apiKey });
+    console.log('✅ Gemini AI client initialized successfully');
+  }
+  
+  return ai;
 };

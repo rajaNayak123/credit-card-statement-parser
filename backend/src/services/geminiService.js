@@ -5,7 +5,7 @@ import { getGeminiModel } from '../config/gemini.js';
  */
 export const extractRewardPoints = async (pdfText, metadata = {}) => {
   try {
-    const model = getGeminiModel();
+    const ai = getGeminiModel();
     
     const prompt = `
 You are an expert at analyzing credit card statements and extracting reward points information.
@@ -43,9 +43,12 @@ Respond with a JSON object in this exact format (no markdown, no code blocks, ju
 }
 `;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash", 
+      contents: prompt,
+    });
+    
+    const text = response.text;
     
     // Clean the response - remove markdown code blocks if present
     let cleanedText = text.trim();
@@ -61,7 +64,11 @@ Respond with a JSON object in this exact format (no markdown, no code blocks, ju
   } catch (error) {
     console.error('Gemini API Error:', error);
     
-    // If JSON parsing fails, try to extract manually
+    // Handle quota exceeded errors specifically
+    if (error.status === 429) {
+      throw new Error('Gemini API quota exceeded. Please wait a few minutes and try again, or upgrade your API plan.');
+    }
+    
     if (error instanceof SyntaxError) {
       throw new Error('Failed to parse Gemini response as JSON. Please try again.');
     }
