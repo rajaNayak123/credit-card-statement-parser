@@ -1,16 +1,16 @@
-import express from 'express'
-import cors from 'cors';
 import dotenv from 'dotenv';
-import {connectDB} from './config/db.js';
+dotenv.config();
+
+import express from 'express';
+import cors from 'cors';
+import { connectDB } from './config/db.js';
 import statementRoutes from './routes/statementRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
-dotenv.config()
+const app = express();
 
-const app = express()
-
-// call here connectDB
-connectDB()
+// Call connectDB
+connectDB();
 
 // Middleware
 app.use(cors());
