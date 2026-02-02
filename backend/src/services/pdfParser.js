@@ -1,5 +1,8 @@
 import fs from 'fs/promises';
-import pdfParse from 'pdf-parse';
+// Use createRequire to import CommonJS modules in an ES Module project
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 import { PDFDocument } from 'pdf-lib';
 
 /**
