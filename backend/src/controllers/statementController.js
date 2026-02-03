@@ -56,10 +56,11 @@ export const uploadStatement = async (req, res, next) => {
     const rp = groqResult.rewardPoints || {};
 
     const normalizedRewardPoints = {
-      opening: rp.opening ?? null,
-      earned: rp.earned ?? null,
-      redeemed: rp.redeemed ?? null,
-      closing: rp.closing ?? null,
+      opening:        rp.opening        ?? null,
+      earned:         rp.earned         ?? null,
+      redeemed:       rp.redeemed       ?? null,
+      adjustedLapsed: rp.adjustedLapsed ?? null,   // HDFC "Adjusted/Lapsed" column
+      closing:        rp.closing        ?? null,
       breakdown:
         Array.isArray(rp.breakdown) && rp.breakdown.length > 0
           ? rp.breakdown
@@ -70,7 +71,7 @@ export const uploadStatement = async (req, res, next) => {
     statement.bankName = groqResult.bankName || 'Unknown';
     statement.statementPeriod = groqResult.statementPeriod;
     statement.rewardPoints = normalizedRewardPoints;
-    statement.aiResponse = groqResult; // Changed from geminiResponse to aiResponse
+    statement.aiResponse = groqResult;
     statement.processingStatus = 'completed';
     await statement.save();
     
