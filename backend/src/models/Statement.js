@@ -19,24 +19,24 @@ const statementSchema = new mongoose.Schema({
   rewardPoints: {
     opening: {
       type: Number,
-      default: 0,
+      default: null,
     },
     earned: {
       type: Number,
-      default: 0,
+      default: null,
     },
     redeemed: {
       type: Number,
-      default: 0,
+      default: null,
     },
     closing: {
       type: Number,
-      default: 0,
+      default: null,
     },
-    breakdown: [{
-      category: String,
-      points: Number,
-    }],
+    breakdown: {
+      type: Array,
+      default: null
+    }
   },
   rawExtractedText: {
     type: String,
