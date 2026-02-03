@@ -52,11 +52,23 @@ export const uploadStatement = async (req, res, next) => {
     if (!validation.valid) {
       throw new Error(validation.error);
     }
-    
+
+    const rp = groqResult.rewardPoints || {};
+
+    statement.rewardPoints = {
+      opening: rp.opening ?? null,
+      earned: rp.earned ?? null,
+      redeemed: rp.redeemed ?? null,
+      closing: rp.closing ?? null,
+      breakdown: Array.isArray(rp.breakdown) && rp.breakdown.length > 0
+        ? rp.breakdown
+        : null
+    };
+
     // Step 4: Update statement with results
     statement.bankName = groqResult.bankName || 'Unknown';
     statement.statementPeriod = groqResult.statementPeriod;
-    statement.rewardPoints = groqResult.rewardPoints;
+    statement.rewardPoints = normalizedRewardPoints;
     statement.aiResponse = groqResult; // Changed from geminiResponse to aiResponse
     statement.processingStatus = 'completed';
     await statement.save();
