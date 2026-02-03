@@ -55,14 +55,15 @@ export const uploadStatement = async (req, res, next) => {
 
     const rp = groqResult.rewardPoints || {};
 
-    statement.rewardPoints = {
+    const normalizedRewardPoints = {
       opening: rp.opening ?? null,
       earned: rp.earned ?? null,
       redeemed: rp.redeemed ?? null,
       closing: rp.closing ?? null,
-      breakdown: Array.isArray(rp.breakdown) && rp.breakdown.length > 0
-        ? rp.breakdown
-        : null
+      breakdown:
+        Array.isArray(rp.breakdown) && rp.breakdown.length > 0
+          ? rp.breakdown
+          : null,
     };
 
     // Step 4: Update statement with results
