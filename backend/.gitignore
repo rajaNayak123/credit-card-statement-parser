@@ -139,3 +139,13 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+uploads/
+temp/
+*.log
+.DS_Store
+dist/
+build/
+coverage/
+*.pid
+*.seed
+*.pid.lock

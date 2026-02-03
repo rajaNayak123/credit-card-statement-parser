@@ -41,7 +41,7 @@ const statementSchema = new mongoose.Schema({
   rawExtractedText: {
     type: String,
   },
-  geminiResponse: {
+  aiResponse: {
     type: Object,
   },
   processingStatus: {

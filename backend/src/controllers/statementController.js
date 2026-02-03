@@ -1,6 +1,6 @@
 import Statement from '../models/Statement.js';
 import { parsePDF, extractPDFMetadata } from '../services/pdfParser.js';
-import { extractRewardPoints, validateExtractedData } from '../services/geminiService.js';
+import { extractRewardPoints, validateExtractedData } from '../services/groqService.js';
 import fs from 'fs/promises';
 
 /**
@@ -30,24 +30,34 @@ export const uploadStatement = async (req, res, next) => {
     const pdfData = await parsePDF(filePath);
     const metadata = await extractPDFMetadata(filePath);
     
+    // LOG RAW PDF DATA
+    console.log('--- Raw PDF Data Extracted ---');
+    console.log('Text Length:', pdfData.text.length);
+    console.log('Is Scanned:', pdfData.isScanned);
+    console.log('Page Count:', pdfData.numPages);
+
     // Update statement with raw text
     statement.rawExtractedText = pdfData.text;
     await statement.save();
     
-    // Step 2: Send to Gemini for extraction
-    const geminiResult = await extractRewardPoints(pdfData.text, pdfData);
+    // Step 2: Send to Groq for extraction
+    const groqResult = await extractRewardPoints(pdfData.text, pdfData);
+    
+    // LOG GROQ ANALYSIS RESULT
+    console.log('--- Groq Extracted Data ---');
+    console.log(JSON.stringify(groqResult, null, 2));
     
     // Step 3: Validate extracted data
-    const validation = validateExtractedData(geminiResult);
+    const validation = validateExtractedData(groqResult);
     if (!validation.valid) {
       throw new Error(validation.error);
     }
     
     // Step 4: Update statement with results
-    statement.bankName = geminiResult.bankName || 'Unknown';
-    statement.statementPeriod = geminiResult.statementPeriod;
-    statement.rewardPoints = geminiResult.rewardPoints;
-    statement.geminiResponse = geminiResult;
+    statement.bankName = groqResult.bankName || 'Unknown';
+    statement.statementPeriod = groqResult.statementPeriod;
+    statement.rewardPoints = groqResult.rewardPoints;
+    statement.aiResponse = groqResult; // Changed from geminiResponse to aiResponse
     statement.processingStatus = 'completed';
     await statement.save();
     
@@ -98,7 +108,7 @@ export const getAllStatements = async (req, res, next) => {
   try {
     const statements = await Statement.find()
       .sort({ uploadDate: -1 })
-      .select('-rawExtractedText -geminiResponse');
+      .select('-rawExtractedText -aiResponse');
     
     res.status(200).json({
       success: true,
