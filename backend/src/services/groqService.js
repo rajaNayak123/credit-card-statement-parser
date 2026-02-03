@@ -76,16 +76,18 @@ IMPORTANT INSTRUCTIONS:
 2. Extract opening balance, earned points, redeemed points, and closing balance.
    - If only a single "balance" or "points balance" figure is present with no earned/redeemed
      breakdown, treat it as the CLOSING balance.
-3. Identify any point breakdown by category (e.g., dining, travel, shopping).
-   - For the breakdown, calculate points from transaction AMOUNTS using the card's earn rate
-     ONLY if an earn rate is explicitly stated in the text. Otherwise leave category points as 0.
+3. Identify reward points ONLY if they are EXPLICITLY mentioned in the statement text.
+   - DO NOT calculate or infer reward points from transaction amounts.
+   - DO NOT assume earn rates.
+   - DO NOT create category-wise reward breakdowns unless the statement explicitly provides them.
+   - If category-wise reward points are not present, return breakdown as null.
 4. Try to identify the bank name and statement period.
 5. Handle variations in formatting and wording.
 6. Be flexible with OCR errors - look for patterns even if spelling isn't perfect.
 7. Common OCR mistakes to watch for:
    - Numbers: 0/O, 1/I/l, 5/S, 8/B
    - Letters: rn/m, cl/d, vv/w
-8. If information is unclear or missing, use null or 0 as appropriate.
+8. If information is missing or not explicitly stated, use null (NOT 0).
 9. CRITICAL - The text has already been pre-processed. Look for these EXACT patterns:
    - "eDGE REWARD POINTS BALANCE: <number>"  →  that number is the closing points balance.
      Do NOT confuse it with the CUSTOMER ID that follows.
