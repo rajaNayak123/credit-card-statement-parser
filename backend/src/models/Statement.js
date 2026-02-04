@@ -34,6 +34,10 @@ const statementSchema = new mongoose.Schema({
       type: Number,
       default: null,
     },
+    adjustedLapsed: {
+      type: Number,
+      default: null,
+    },
     closing: {
       type: Number,
       default: null,
@@ -57,6 +61,24 @@ const statementSchema = new mongoose.Schema({
   errorMessage: {
     type: String,
   },
+  // NEW FIELDS FOR GMAIL INTEGRATION
+  source: {
+    type: String,
+    enum: ['manual', 'gmail'],
+    default: 'manual',
+  },
+  metadata: {
+    gmailMessageId: {
+      type: String,
+      index: true,
+    },
+    gmailSubject: String,
+    gmailFrom: String,
+    gmailDate: String,
+  },
 });
+
+// Compound index for faster duplicate checking
+statementSchema.index({ userId: 1, 'metadata.gmailMessageId': 1 });
 
 export default mongoose.model('Statement', statementSchema);
