@@ -11,16 +11,18 @@ export const uploadStatement = async (req, res, next) => {
   
   try {
     if (!req.file) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'No file uploaded' 
+      return res.status(400).json({
+        success: false,
+        error: 'No file uploaded',
       });
     }
-    
+
+    const userId = req.user.id; // 👈 from Better Auth
     filePath = req.file.path;
     
     // Create initial statement record
     const statement = new Statement({
+      userId,
       fileName: req.file.originalname,
       processingStatus: 'processing',
     });
@@ -30,6 +32,15 @@ export const uploadStatement = async (req, res, next) => {
     const pdfData = await parsePDF(filePath);
     const metadata = await extractPDFMetadata(filePath);
     
+    
+    // LOG RAW PDF DATA
+    console.log('--- Raw PDF Data Extracted ---');
+    console.log('Text Length:', pdfData.text.length);
+    console.log('Is Scanned:', pdfData.isScanned);
+    console.log('Page Count:', pdfData.numPages);
+
+    // Update statement with raw text
+
     // LOG RAW PDF DATA
     console.log('--- Raw PDF Data Extracted ---');
     console.log('Text Length:', pdfData.text.length);
@@ -55,62 +66,30 @@ export const uploadStatement = async (req, res, next) => {
 
     const rp = groqResult.rewardPoints || {};
 
-    const normalizedRewardPoints = {
-      opening:        rp.opening        ?? null,
-      earned:         rp.earned         ?? null,
-      redeemed:       rp.redeemed       ?? null,
-      adjustedLapsed: rp.adjustedLapsed ?? null,   // HDFC "Adjusted/Lapsed" column
-      closing:        rp.closing        ?? null,
-      breakdown:
-        Array.isArray(rp.breakdown) && rp.breakdown.length > 0
-          ? rp.breakdown
-          : null,
-    };
-
-    // Step 4: Update statement with results
     statement.bankName = groqResult.bankName || 'Unknown';
     statement.statementPeriod = groqResult.statementPeriod;
-    statement.rewardPoints = normalizedRewardPoints;
+    statement.rewardPoints = {
+      opening: rp.opening ?? null,
+      earned: rp.earned ?? null,
+      redeemed: rp.redeemed ?? null,
+      adjustedLapsed: rp.adjustedLapsed ?? null,
+      closing: rp.closing ?? null,
+      breakdown: Array.isArray(rp.breakdown) ? rp.breakdown : null,
+    };
     statement.aiResponse = groqResult;
     statement.processingStatus = 'completed';
+
     await statement.save();
     
     // Clean up uploaded file
     await fs.unlink(filePath);
-    
+
     res.status(200).json({
       success: true,
       data: statement,
-      message: 'Statement processed successfully',
     });
-    
   } catch (error) {
-    console.error('Upload Statement Error:', error);
-    
-    // Clean up file if exists
-    if (filePath) {
-      try {
-        await fs.unlink(filePath);
-      } catch (unlinkError) {
-        console.error('Error deleting file:', unlinkError);
-      }
-    }
-    
-    // Update statement status to failed if it exists
-    if (req.file) {
-      try {
-        await Statement.findOneAndUpdate(
-          { fileName: req.file.originalname },
-          { 
-            processingStatus: 'failed',
-            errorMessage: error.message 
-          }
-        );
-      } catch (updateError) {
-        console.error('Error updating statement status:', updateError);
-      }
-    }
-    
+    if (filePath) await fs.unlink(filePath).catch(() => {});
     next(error);
   }
 };
@@ -120,7 +99,7 @@ export const uploadStatement = async (req, res, next) => {
  */
 export const getAllStatements = async (req, res, next) => {
   try {
-    const statements = await Statement.find()
+    const statements = await Statement.find({ userId: req.user.id })
       .sort({ uploadDate: -1 })
       .select('-rawExtractedText -aiResponse');
     
@@ -139,8 +118,11 @@ export const getAllStatements = async (req, res, next) => {
  */
 export const getStatementById = async (req, res, next) => {
   try {
-    const statement = await Statement.findById(req.params.id);
-    
+    const statement = await Statement.findOne({
+      _id: req.params.id,
+      userId: req.user.id,
+    });
+
     if (!statement) {
       return res.status(404).json({
         success: false,
@@ -162,8 +144,11 @@ export const getStatementById = async (req, res, next) => {
  */
 export const deleteStatement = async (req, res, next) => {
   try {
-    const statement = await Statement.findByIdAndDelete(req.params.id);
-    
+    const statement = await Statement.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.id,
+    });
+
     if (!statement) {
       return res.status(404).json({
         success: false,

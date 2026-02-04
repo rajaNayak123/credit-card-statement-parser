@@ -5,6 +5,11 @@ const statementSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    required: true,
+    index: true,
+  },
   uploadDate: {
     type: Date,
     default: Date.now,
