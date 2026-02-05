@@ -10,7 +10,7 @@ import {
 } from '../services/gmailService.js';
 import { parsePDF } from '../services/pdfParser.js';
 import { extractRewardPoints } from '../services/groqService.js';
-import { isLikelyCreditCardStatement, hasCardNumberPattern } from '../services/pdfValidator.js';
+import { isLikelyCreditCardStatement } from '../services/pdfValidator.js';
 import Statement from '../models/Statement.js';
 import fs from 'fs/promises';
 
@@ -86,7 +86,7 @@ export const disconnectGmail = async (req, res, next) => {
 };
 
 /**
- * Fetch statements from Gmail with enhanced filtering and validation
+ * Fetch statements from Gmail using new decision flow
  */
 export const fetchStatementsFromGmail = async (req, res, next) => {
   try {
@@ -101,34 +101,26 @@ export const fetchStatementsFromGmail = async (req, res, next) => {
 
     const userId = req.user.id;
     
-    // Get filters from query params
+    // Get filters from query params (optional overrides)
     const filters = {
       after: req.query.after,
       before: req.query.before,
-      from: req.query.from,
-      maxResults: parseInt(req.query.maxResults) || 100,
+      maxResults: parseInt(req.query.maxResults) || 500,
     };
     
-    console.log('\n' + '═'.repeat(70));
-    console.log('🚀 STARTING CREDIT CARD STATEMENT FETCH FROM GMAIL');
-    console.log('═'.repeat(70));
-    console.log('👤 User ID:', userId);
-    console.log('🔍 Filters:', JSON.stringify(filters, null, 2));
+    console.log('\n🚀 Starting Gmail fetch for user:', userId);
+    console.log('📋 Filters:', JSON.stringify(filters, null, 2));
     
-    // Step 1: Fetch statements from Gmail with smart filtering
+    // Step 1: Fetch statements using decision flow
     const result = await fetchAllStatements(filters);
     
     if (result.count === 0) {
-      console.log('\n⚠️  No credit card statements found');
+      console.log('\n⚠️  No statements found to process');
       return res.json({
         success: true,
-        message: result.statistics.searched > 0 
-          ? `Searched ${result.statistics.searched} emails, but none were valid credit card statements`
-          : 'No credit card statements found in Gmail',
+        message: 'No credit card statements found matching criteria',
         processed: 0,
         failed: 0,
-        rejected: 0,
-        totalSearched: result.statistics?.searched || 0,
         statistics: result.statistics,
         statements: [],
       });
@@ -138,21 +130,21 @@ export const fetchStatementsFromGmail = async (req, res, next) => {
     console.log('📋 PROCESSING DOWNLOADED STATEMENTS');
     console.log('─'.repeat(70));
     
-    // Step 2: Process each statement with validation and AI extraction
+    // Step 2: Process each statement
     const processed = [];
     const failed = [];
-    const rejected = [];
+    const duplicates = [];
     
     for (let i = 0; i < result.statements.length; i++) {
       const stmt = result.statements[i];
       
       try {
         console.log(`\n[${i + 1}/${result.statements.length}] 📄 Processing: ${stmt.file.originalFilename}`);
+        console.log(`   Decision: ${stmt.decisionCase} - ${stmt.reason}`);
         console.log(`   Subject: ${stmt.subject}`);
         console.log(`   From: ${stmt.from}`);
-        console.log(`   Validation scores: Subject=${stmt.validation.subjectScore}, Filename=${stmt.validation.filenameScore}`);
         
-        // Check if already processed (avoid duplicates)
+        // Check for duplicates
         const existing = await Statement.findOne({
           userId,
           fileName: stmt.file.originalFilename,
@@ -160,46 +152,46 @@ export const fetchStatementsFromGmail = async (req, res, next) => {
         });
         
         if (existing) {
-          console.log(`   ⏭️  Already processed (duplicate), skipping`);
-          rejected.push({
+          console.log(`   ⭐️ Already processed (duplicate), skipping`);
+          duplicates.push({
             filename: stmt.file.originalFilename,
-            reason: 'Already processed',
             subject: stmt.subject,
           });
           await fs.unlink(stmt.file.filePath).catch(() => {});
           continue;
         }
         
-        // Step 2.1: Parse PDF (quick extraction)
-        console.log('   📖 Step 1/3: Parsing PDF...');
-        const pdfData = await parsePDF(stmt.file.filePath);
-        console.log(`   ✅ Extracted ${pdfData.text.length} characters from ${pdfData.numPages} page(s)`);
+        // For Case 3, we already have PDF analysis
+        let pdfData;
+        let contentValidation;
         
-        // Step 2.2: Content validation
-        console.log('   🔍 Step 2/3: Validating content...');
-        const validation = isLikelyCreditCardStatement(pdfData.text);
-        
-        if (!validation.isStatement) {
-          console.log(`   ❌ REJECTED: ${validation.reason}`);
-          console.log(`   Confidence: ${validation.confidence}, Score: ${validation.score}`);
+        if (stmt.decisionCase === 'Case 3' && stmt.pdfAnalysis) {
+          // Already analyzed in decision flow
+          pdfData = stmt.pdfAnalysis.pdfData;
+          contentValidation = {
+            isStatement: stmt.pdfAnalysis.isBankRelated,
+            confidence: stmt.pdfAnalysis.confidence,
+            score: stmt.pdfAnalysis.score,
+          };
+          console.log('   ✅ Using PDF analysis from decision flow');
+        } else {
+          // Parse and validate for Cases 1 and 2
+          console.log('   📖 Step 1/3: Parsing PDF...');
+          pdfData = await parsePDF(stmt.file.filePath);
+          console.log(`   ✅ Extracted ${pdfData.text.length} characters from ${pdfData.numPages} page(s)`);
           
-          rejected.push({
-            filename: stmt.file.originalFilename,
-            reason: validation.reason,
-            confidence: validation.confidence,
-            score: validation.score,
-            subject: stmt.subject,
-          });
+          console.log('   🔍 Step 2/3: Validating content...');
+          contentValidation = isLikelyCreditCardStatement(pdfData.text);
           
-          await fs.unlink(stmt.file.filePath).catch(() => {});
-          continue;
+          if (!contentValidation.isStatement) {
+            console.log(`   ⚠️  Warning: Content validation failed for ${stmt.decisionCase}`);
+            console.log(`   Reason: ${contentValidation.reason}`);
+            console.log(`   Confidence: ${contentValidation.confidence}`);
+            // Continue anyway since it passed decision flow
+          } else {
+            console.log(`   ✅ Content validated (Confidence: ${contentValidation.confidence})`);
+          }
         }
-        
-        console.log(`   ✅ Content validated (Confidence: ${validation.confidence}, Score: ${validation.score})`);
-        
-        // Step 2.3: Check for card number pattern
-        const hasCardNumber = hasCardNumberPattern(pdfData.text);
-        console.log(`   💳 Card number pattern: ${hasCardNumber ? '✅ Found' : '⚠️  Not found'}`);
         
         // Create initial statement record
         const statement = new Statement({
@@ -212,24 +204,25 @@ export const fetchStatementsFromGmail = async (req, res, next) => {
             gmailSubject: stmt.subject,
             gmailFrom: stmt.from,
             gmailDate: stmt.date,
-            validationConfidence: validation.confidence,
-            validationScore: validation.score,
-            subjectScore: stmt.validation.subjectScore,
-            filenameScore: stmt.validation.filenameScore,
-            isFromBank: stmt.validation.isFromBank,
+            senderDomain: stmt.senderDomain,
+            decisionCase: stmt.decisionCase,
+            decisionReason: stmt.reason,
+            validationConfidence: contentValidation?.confidence,
+            validationScore: contentValidation?.score,
           },
         });
         await statement.save();
         
-        // Update with raw text
+        // Save raw text
         statement.rawExtractedText = pdfData.text;
         await statement.save();
         
-        // Step 2.4: Extract with Groq AI
+        // Extract with AI
         console.log('   🤖 Step 3/3: Extracting reward points with AI...');
         const groqResult = await extractRewardPoints(pdfData.text, pdfData);
         
-        console.log(`   ✅ AI extraction complete (Bank: ${groqResult.bankName || 'Unknown'})`);
+        console.log(`   ✅ AI extraction complete`);
+        console.log(`   Bank: ${groqResult.bankName || 'Unknown'}`);
         console.log(`   Confidence: ${groqResult.confidence}`);
         
         // Update statement with results
@@ -251,7 +244,7 @@ export const fetchStatementsFromGmail = async (req, res, next) => {
         await statement.save();
         
         processed.push(statement);
-        console.log(`   ✅ Successfully processed and saved to database`);
+        console.log(`   ✅ Successfully processed and saved`);
         
         // Clean up file
         await fs.unlink(stmt.file.filePath).catch(() => {});
@@ -265,7 +258,7 @@ export const fetchStatementsFromGmail = async (req, res, next) => {
           subject: stmt.subject,
         });
         
-        // Update statement status to failed
+        // Update statement status
         try {
           await Statement.findOneAndUpdate(
             {
@@ -288,37 +281,37 @@ export const fetchStatementsFromGmail = async (req, res, next) => {
     }
     
     // Final summary
-    console.log('\n' + '═'.repeat(70));
-    console.log('✅ GMAIL FETCH COMPLETE');
-    console.log('═'.repeat(70));
-    console.log('📊 STATISTICS:');
-    console.log('   📧 Emails searched:              ', result.statistics?.searched || 0);
-    console.log('   ⏭️  Filtered by Gmail query:      ', result.statistics?.skippedBySubject || 0);
-    console.log('   📥 PDFs downloaded:              ', result.statistics?.downloaded || 0);
-    console.log('   ❌ Rejected by content validation:', rejected.length);
-    console.log('   ✅ Successfully processed:       ', processed.length);
-    console.log('   ⚠️  Failed during processing:    ', failed.length);
-    console.log('═'.repeat(70) + '\n');
+    console.log('\n╔' + '═'.repeat(68) + '╗');
+    console.log('║  ✅ GMAIL FETCH COMPLETE' + ' '.repeat(43) + '║');
+    console.log('╠' + '═'.repeat(68) + '╣');
+    console.log('║  📊 STATISTICS:' + ' '.repeat(53) + '║');
+    console.log('╠' + '═'.repeat(68) + '╣');
+    console.log(`║  📧 Total emails searched:           ${String(result.statistics.totalEmails).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ✅ Case 1 (Bank domain):            ${String(result.statistics.case1).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ✅ Case 2 (Keywords):               ${String(result.statistics.case2).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ✅ Case 3 (PDF analysis):           ${String(result.statistics.case3).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ⏭️  Ignored emails:                  ${String(result.statistics.ignored).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  📥 PDFs downloaded:                 ${String(result.count).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ⭐️ Duplicates skipped:              ${String(duplicates.length).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ✅ Successfully processed:          ${String(processed.length).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ❌ Failed:                           ${String(failed.length).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log('╚' + '═'.repeat(68) + '╝\n');
     
     res.json({
       success: true,
       message: `Successfully processed ${processed.length} credit card statement(s)`,
       processed: processed.length,
       failed: failed.length,
-      rejected: rejected.length,
-      totalSearched: result.statistics?.searched || 0,
-      totalDownloaded: result.statistics?.downloaded || 0,
+      duplicates: duplicates.length,
       statistics: {
-        searched: result.statistics?.searched || 0,
-        skippedByGmailQuery: result.statistics?.skippedBySubject || 0,
-        downloaded: result.statistics?.downloaded || 0,
-        rejectedByContent: rejected.length,
-        processed: processed.length,
+        ...result.statistics,
+        duplicates: duplicates.length,
+        successfullyProcessed: processed.length,
         failed: failed.length,
       },
       statements: processed,
       errors: failed.length > 0 ? failed : undefined,
-      rejectedFiles: rejected.length > 0 ? rejected : undefined,
+      duplicateFiles: duplicates.length > 0 ? duplicates : undefined,
     });
     
   } catch (error) {

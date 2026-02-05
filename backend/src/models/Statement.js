@@ -61,13 +61,14 @@ const statementSchema = new mongoose.Schema({
   errorMessage: {
     type: String,
   },
-  // NEW FIELDS FOR GMAIL INTEGRATION
+  // Gmail integration fields
   source: {
     type: String,
     enum: ['manual', 'gmail'],
     default: 'manual',
   },
   metadata: {
+    // Gmail message info
     gmailMessageId: {
       type: String,
       index: true,
@@ -75,10 +76,25 @@ const statementSchema = new mongoose.Schema({
     gmailSubject: String,
     gmailFrom: String,
     gmailDate: String,
+    
+    // Decision flow info
+    senderDomain: String,
+    decisionCase: {
+      type: String,
+      enum: ['Case 1', 'Case 2', 'Case 3'],
+    },
+    decisionReason: String,
+    
+    // Validation info
+    validationConfidence: String,
+    validationScore: Number,
   },
 });
 
 // Compound index for faster duplicate checking
 statementSchema.index({ userId: 1, 'metadata.gmailMessageId': 1 });
+
+// Index for querying by decision case
+statementSchema.index({ 'metadata.decisionCase': 1 });
 
 export default mongoose.model('Statement', statementSchema);

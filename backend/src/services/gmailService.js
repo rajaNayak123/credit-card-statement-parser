@@ -1,91 +1,17 @@
 import { getGmailClient } from '../config/gmail.js';
+import { parsePDF } from './pdfParser.js';
+import { isLikelyCreditCardStatement } from './pdfValidator.js';
 import fs from 'fs/promises';
 import path from 'path';
 
 /**
- * Enhanced credit card statement keywords - MORE PRECISE
- */
-const CREDIT_CARD_KEYWORDS = {
-  // Primary statement indicators (used in Gmail search)
-  primary: [
-    'credit card statement',
-    'card statement',
-    'statement of account',
-    'billing statement',
-    'monthly statement',
-  ],
-  
-  // Secondary indicators for subject validation
-  subjects: [
-    'credit card statement',
-    'card statement',
-    'statement of account',
-    'billing statement',
-    'monthly statement',
-    'account statement',
-    'e-statement',
-    'estatement',
-    'your statement',
-    'statement is ready',
-    'statement available',
-  ],
-  
-  bankNames: [
-    'hdfc',
-    'icici',
-    'axis',
-    'sbi',
-    'kotak',
-    'yes bank',
-    'indusind',
-    'standard chartered',
-    'citibank',
-    'hsbc',
-    'american express',
-    'amex',
-    'rbl',
-    'idfc',
-    'au bank',
-    'bob', // Bank of Baroda
-    'pnb', // Punjab National Bank
-    'chase',
-    'bank of america',
-    'wells fargo',
-    'capital one',
-    'discover',
-  ],
-  
-  // STRICT exclusions
-  exclude: [
-    'invoice',
-    'receipt',
-    'payment confirmation',
-    'transaction alert',
-    'transaction notification',
-    'otp',
-    'password',
-    'welcome',
-    'activated',
-    'registration',
-    'kyc',
-    'promotional',
-    'offer',
-    'cashback credited',
-    'reward points credited',
-    'payment received',
-    'payment successful',
-    'autopay',
-  ],
-};
-
-/**
- * Known bank email domains - EXPANDED LIST
+ * Known bank email domains
  */
 const BANK_DOMAINS = [
   // Indian Banks
   'hdfcbank.com', 'hdfcbank.net',
   'icicibank.com',
-  'sbi.co.in', 'onlinesbi.com',
+  'sbi.co.in', 'onlinesbi.com', 'sbicard.com',
   'axisbank.com',
   'kotak.com',
   'yesbank.in',
@@ -97,8 +23,8 @@ const BANK_DOMAINS = [
   'idfcfirstbank.com',
   'aubank.in',
   'americanexpress.com', 'aexp.com',
-  'bobfinancial.com', // Bank of Baroda
-  'pnbcards.com', // Punjab National Bank
+  'bobfinancial.com', 'bankofbaroda.com',
+  'pnbcards.com',
   
   // International Banks
   'chase.com',
@@ -112,70 +38,70 @@ const BANK_DOMAINS = [
 ];
 
 /**
- * Build OPTIMIZED Gmail search query for ONLY credit card statements
- * Uses Gmail's advanced search operators for maximum precision
+ * Bank-related keywords for subject and body
+ */
+const BANK_KEYWORDS = [
+  'credit card',
+  'statement',
+  'e-statement',
+  'estatement',
+  'card statement',
+  'billing statement',
+  'account summary',
+  'reward points',
+  'payment due',
+  'monthly statement',
+  'statement of account',
+  'billing cycle',
+  'credit limit',
+  'total amount due',
+  'minimum payment',
+];
+
+/**
+ * Get date range for last 2 months
+ */
+const getLast2MonthsDateRange = () => {
+  const now = new Date();
+  const twoMonthsAgo = new Date();
+  twoMonthsAgo.setMonth(now.getMonth() - 2);
+  
+  // Gmail date format: YYYY/MM/DD
+  const formatDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}/${month}/${day}`;
+  };
+  
+  return {
+    after: formatDate(twoMonthsAgo),
+    before: formatDate(now),
+  };
+};
+
+/**
+ * Build Gmail search query
+ * Step 1: Fetch emails from last 2 months with PDF attachments only
  */
 const buildSearchQuery = (filters = {}) => {
   const queries = [];
   
-  // MANDATORY: Must have PDF attachment
+  // MANDATORY: Must have PDF attachment (Step 2)
   queries.push('has:attachment');
   queries.push('filename:pdf');
   
-  // CRITICAL: Must contain "statement" + "credit card" OR specific bank names
-  // Using OR logic with parentheses for precise matching
-  const statementTerms = [
-    '"credit card statement"',
-    '"card statement"',
-    '"billing statement"',
-    '"monthly statement"',
-    '("statement" AND ("credit card" OR "card account"))',
-  ];
-  
-  queries.push(`(${statementTerms.join(' OR ')})`);
-  
-  // EXCLUSIONS: Remove non-statement emails (very important)
-  const exclusions = [
-    '-"transaction alert"',
-    '-"payment confirmation"',
-    '-"payment received"',
-    '-"payment successful"',
-    '-"otp"',
-    '-"one time password"',
-    '-"welcome"',
-    '-"activated"',
-    '-"registration"',
-    '-"promotional"',
-    '-"offer"',
-    '-invoice',
-    '-receipt',
-  ];
-  
-  queries.push(...exclusions);
-  
-  // Date filters (if provided)
-  if (filters.after) {
-    queries.push(`after:${filters.after}`);
-  }
-  if (filters.before) {
-    queries.push(`before:${filters.before}`);
-  }
-  
-  // Sender filter (if provided)
-  if (filters.from) {
-    queries.push(`from:${filters.from}`);
-  } else {
-    // Optional: Filter by known bank domains (can be too restrictive)
-    // Uncomment if you want to ONLY search emails from known banks
-    // const bankDomainQuery = BANK_DOMAINS.map(d => `from:*@${d}`).join(' OR ');
-    // queries.push(`(${bankDomainQuery})`);
-  }
+  // Date range: Last 2 months (Step 1)
+  const dateRange = getLast2MonthsDateRange();
+  queries.push(`after:${filters.after || dateRange.after}`);
+  queries.push(`before:${filters.before || dateRange.before}`);
   
   return queries.join(' ');
 };
 
 /**
- * Check if email sender is from a known bank domain
+ * Check if sender domain is from a known bank
+ * Step 3 - Case 1
  */
 const isFromBankDomain = (fromEmail) => {
   if (!fromEmail) return false;
@@ -185,148 +111,57 @@ const isFromBankDomain = (fromEmail) => {
 };
 
 /**
- * ENHANCED: Validate email subject for credit card statement indicators
- * Returns confidence score (0-100)
+ * Check if text contains bank-related keywords
+ * Step 3 - Case 2
  */
-const validateStatementSubject = (subject) => {
-  if (!subject) return { isValid: false, score: 0, reason: 'No subject' };
+const containsBankKeywords = (text) => {
+  if (!text) return false;
   
-  const subjectLower = subject.toLowerCase();
-  let score = 0;
-  const reasons = [];
-  
-  // MUST contain statement keywords (high weight)
-  const hasStatementKeyword = CREDIT_CARD_KEYWORDS.subjects.some(keyword => {
-    if (subjectLower.includes(keyword)) {
-      score += 40;
-      reasons.push(`Contains: "${keyword}"`);
-      return true;
-    }
-    return false;
-  });
-  
-  if (!hasStatementKeyword) {
-    return { 
-      isValid: false, 
-      score: 0, 
-      reason: 'Missing statement keywords in subject' 
-    };
-  }
-  
-  // Bonus: Contains bank name (medium weight)
-  const hasBankName = CREDIT_CARD_KEYWORDS.bankNames.some(bank => {
-    if (subjectLower.includes(bank)) {
-      score += 30;
-      reasons.push(`Bank: ${bank}`);
-      return true;
-    }
-    return false;
-  });
-  
-  // Bonus: Contains "credit" or "card" (medium weight)
-  if (subjectLower.includes('credit') || subjectLower.includes('card')) {
-    score += 20;
-    reasons.push('Contains credit/card');
-  }
-  
-  // PENALTY: Contains exclusion keywords (severe)
-  const hasExclusion = CREDIT_CARD_KEYWORDS.exclude.some(keyword => {
-    if (subjectLower.includes(keyword)) {
-      score -= 80; // Heavy penalty
-      reasons.push(`EXCLUDED: "${keyword}"`);
-      return true;
-    }
-    return false;
-  });
-  
-  // Final validation
-  const isValid = score >= 40 && !hasExclusion;
-  
-  return {
-    isValid,
-    score: Math.max(0, Math.min(100, score)),
-    reasons: reasons.join(', '),
-    hasBankName,
-  };
+  const textLower = text.toLowerCase();
+  return BANK_KEYWORDS.some(keyword => textLower.includes(keyword));
 };
 
 /**
- * ENHANCED: Validate PDF filename
+ * Extract email body text from message payload
  */
-const validateStatementFilename = (filename) => {
-  if (!filename) return { isValid: false, score: 0 };
+const getEmailBody = (payload) => {
+  let body = '';
   
-  const filenameLower = filename.toLowerCase();
-  let score = 0;
-  
-  // Must be PDF
-  if (!filenameLower.endsWith('.pdf')) {
-    return { isValid: false, score: 0, reason: 'Not a PDF file' };
-  }
-  
-  // Positive indicators
-  const positiveKeywords = [
-    'statement',
-    'credit',
-    'card',
-    'billing',
-    'account',
-    'estatement',
-    'e-statement',
-  ];
-  
-  positiveKeywords.forEach(keyword => {
-    if (filenameLower.includes(keyword)) {
-      score += 20;
+  const extractText = (part) => {
+    if (part.mimeType === 'text/plain' || part.mimeType === 'text/html') {
+      if (part.body && part.body.data) {
+        const decoded = Buffer.from(part.body.data, 'base64').toString('utf-8');
+        body += decoded + ' ';
+      }
     }
-  });
-  
-  // Negative indicators
-  const negativeKeywords = [
-    'invoice',
-    'receipt',
-    'payment_confirmation',
-    'transaction',
-    'alert',
-  ];
-  
-  const hasNegative = negativeKeywords.some(keyword => 
-    filenameLower.includes(keyword)
-  );
-  
-  if (hasNegative) {
-    score -= 50;
-  }
-  
-  return {
-    isValid: score >= 20,
-    score: Math.max(0, score),
+    
+    if (part.parts) {
+      part.parts.forEach(extractText);
+    }
   };
+  
+  extractText(payload);
+  return body.trim();
 };
 
 /**
- * Search for credit card statement emails with OPTIMIZED filtering
+ * Search emails with PDF attachments from last 2 months
  */
 export const searchStatementEmails = async (filters = {}) => {
   try {
     const gmail = await getGmailClient();
-    
     const query = buildSearchQuery(filters);
     
-    console.log('📧 Gmail Search Query:', query);
-    console.log('📧 Query breakdown:');
-    console.log('   ✓ Attachments: PDF files only');
-    console.log('   ✓ Keywords: Statement + Credit Card');
-    console.log('   ✓ Exclusions: Alerts, OTPs, Invoices, Receipts');
+    console.log('🔍 Gmail Search Query:', query);
     
     const response = await gmail.users.messages.list({
       userId: 'me',
       q: query,
-      maxResults: filters.maxResults || 100, // Increased for better coverage
+      maxResults: filters.maxResults || 500,
     });
     
     const messages = response.data.messages || [];
-    console.log(`✅ Gmail returned ${messages.length} potential emails`);
+    console.log(`📧 Found ${messages.length} emails with PDF attachments from last 2 months`);
     
     return messages;
   } catch (error) {
@@ -356,119 +191,9 @@ export const getEmailDetails = async (messageId) => {
 };
 
 /**
- * ENHANCED: Extract and validate PDF attachments from email
- * Returns detailed validation results
+ * Download attachment to temporary location
  */
-export const extractPDFAttachments = async (messageId) => {
-  try {
-    const gmail = await getGmailClient();
-    const message = await getEmailDetails(messageId);
-    
-    const attachments = [];
-    
-    // Get email headers
-    const headers = message.payload.headers;
-    const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
-    const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
-    const date = headers.find(h => h.name === 'Date')?.value || '';
-    
-    // VALIDATION STEP 1: Check email metadata
-    const subjectValidation = validateStatementSubject(subject);
-    const isFromBank = isFromBankDomain(from);
-    
-    console.log(`\n📨 Email: "${subject}"`);
-    console.log(`   From: ${from}`);
-    console.log(`   Subject validation: ${subjectValidation.isValid ? '✅' : '❌'} (Score: ${subjectValidation.score})`);
-    console.log(`   Bank domain: ${isFromBank ? '✅' : '❌'}`);
-    
-    // Skip if subject validation fails
-    if (!subjectValidation.isValid) {
-      console.log(`   ⏭️  SKIPPED: ${subjectValidation.reason}`);
-      return {
-        messageId,
-        subject,
-        from,
-        date,
-        attachments: [],
-        skipped: true,
-        reason: subjectValidation.reason,
-        validation: subjectValidation,
-      };
-    }
-    
-    // Recursive function to find attachments in parts
-    const findAttachments = (parts) => {
-      if (!parts) return;
-      
-      for (const part of parts) {
-        if (part.filename && part.filename.toLowerCase().endsWith('.pdf')) {
-          // VALIDATION STEP 2: Check filename
-          const filenameValidation = validateStatementFilename(part.filename);
-          
-          if (filenameValidation.isValid) {
-            attachments.push({
-              filename: part.filename,
-              mimeType: part.mimeType,
-              attachmentId: part.body.attachmentId,
-              size: part.body.size,
-              validation: filenameValidation,
-            });
-            console.log(`   📎 PDF found: "${part.filename}" (Score: ${filenameValidation.score})`);
-          } else {
-            console.log(`   ⏭️  PDF skipped: "${part.filename}" (Score: ${filenameValidation.score})`);
-          }
-        }
-        
-        // Recursively check nested parts
-        if (part.parts) {
-          findAttachments(part.parts);
-        }
-      }
-    };
-    
-    findAttachments([message.payload]);
-    
-    // VALIDATION STEP 3: Check attachment count
-    if (attachments.length === 0) {
-      console.log(`   ⏭️  No valid statement PDFs found`);
-      return {
-        messageId,
-        subject,
-        from,
-        date,
-        attachments: [],
-        skipped: true,
-        reason: 'No valid PDF attachments',
-        validation: subjectValidation,
-      };
-    }
-    
-    if (attachments.length > 3) {
-      console.log(`   ⚠️  Warning: ${attachments.length} PDFs found (unusual for statement)`);
-    }
-    
-    console.log(`   ✅ ${attachments.length} valid PDF(s) to process`);
-    
-    return {
-      messageId,
-      subject,
-      from,
-      date,
-      attachments,
-      skipped: false,
-      validation: subjectValidation,
-      isFromBank,
-    };
-  } catch (error) {
-    console.error('❌ Error extracting attachments:', error);
-    throw new Error(`Failed to extract attachments: ${error.message}`);
-  }
-};
-
-/**
- * Download attachment
- */
-export const downloadAttachment = async (messageId, attachmentId, filename) => {
+const downloadAttachment = async (messageId, attachmentId, filename) => {
   try {
     const gmail = await getGmailClient();
     
@@ -481,7 +206,7 @@ export const downloadAttachment = async (messageId, attachmentId, filename) => {
     // Decode base64 data
     const data = Buffer.from(response.data.data, 'base64');
     
-    // Save to uploads directory
+    // Save to temp directory
     const uploadsDir = path.join(process.cwd(), 'uploads');
     await fs.mkdir(uploadsDir, { recursive: true });
     
@@ -490,9 +215,6 @@ export const downloadAttachment = async (messageId, attachmentId, filename) => {
     const filePath = path.join(uploadsDir, safeFilename);
     
     await fs.writeFile(filePath, data);
-    
-    const sizeKB = (data.length / 1024).toFixed(2);
-    console.log(`💾 Downloaded: ${filename} (${sizeKB} KB)`);
     
     return {
       filePath,
@@ -507,28 +229,265 @@ export const downloadAttachment = async (messageId, attachmentId, filename) => {
 };
 
 /**
- * MAIN FUNCTION: Fetch and filter all credit card statements
- * With comprehensive logging and statistics
+ * Analyze PDF content to check if it's bank-related
+ * Step 3 - Case 3
+ */
+const analyzePDFContent = async (filePath) => {
+  try {
+    console.log('      📖 Analyzing PDF content...');
+    
+    // Parse PDF
+    const pdfData = await parsePDF(filePath);
+    
+    if (!pdfData.text || pdfData.text.length < 100) {
+      console.log('      ❌ PDF has insufficient text');
+      return { isBankRelated: false, reason: 'Insufficient text in PDF' };
+    }
+    
+    // Use existing validator
+    const validation = isLikelyCreditCardStatement(pdfData.text);
+    
+    console.log(`      ${validation.isStatement ? '✅' : '❌'} PDF Analysis: ${validation.isStatement ? 'Bank-related' : 'Not bank-related'}`);
+    console.log(`      Confidence: ${validation.confidence}, Score: ${validation.score}`);
+    
+    return {
+      isBankRelated: validation.isStatement,
+      confidence: validation.confidence,
+      score: validation.score,
+      reason: validation.reason || 'Content analysis',
+      pdfData,
+    };
+  } catch (error) {
+    console.error('      ❌ Error analyzing PDF:', error.message);
+    return { 
+      isBankRelated: false, 
+      reason: `PDF analysis failed: ${error.message}` 
+    };
+  }
+};
+
+/**
+ * Process single email following the exact decision flow
+ */
+const processEmail = async (messageId, index, total) => {
+  console.log(`\n[${ index}/${total}] 📨 Processing email...`);
+  
+  try {
+    // Get email details
+    const message = await getEmailDetails(messageId);
+    const headers = message.payload.headers;
+    
+    const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
+    const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
+    const date = headers.find(h => h.name === 'Date')?.value || '';
+    const body = getEmailBody(message.payload);
+    
+    console.log(`   Subject: "${subject}"`);
+    console.log(`   From: ${from}`);
+    
+    // Find PDF attachments
+    const pdfAttachments = [];
+    const findPDFs = (parts) => {
+      if (!parts) return;
+      
+      for (const part of parts) {
+        if (part.filename && part.filename.toLowerCase().endsWith('.pdf')) {
+          pdfAttachments.push({
+            filename: part.filename,
+            mimeType: part.mimeType,
+            attachmentId: part.body.attachmentId,
+            size: part.body.size,
+          });
+        }
+        
+        if (part.parts) {
+          findPDFs(part.parts);
+        }
+      }
+    };
+    
+    findPDFs([message.payload]);
+    
+    // Step 2: Ignore emails without PDF attachments
+    if (pdfAttachments.length === 0) {
+      console.log('   ⏭️  IGNORED: No PDF attachments found');
+      return { 
+        skipped: true, 
+        reason: 'No PDF attachments',
+        messageId,
+        subject,
+        from,
+      };
+    }
+    
+    console.log(`   📎 Found ${pdfAttachments.length} PDF attachment(s)`);
+    
+    // Step 3: Extract sender domain
+    const senderDomain = from.match(/@([^\s>]+)/)?.[1]?.toLowerCase() || '';
+    console.log(`   🏦 Sender domain: ${senderDomain}`);
+    
+    // DECISION LOGIC
+    let shouldProcess = false;
+    let decisionCase = '';
+    let reason = '';
+    
+    // Case 1: Sender domain is a known bank domain
+    if (isFromBankDomain(from)) {
+      shouldProcess = true;
+      decisionCase = 'Case 1';
+      reason = 'Known bank domain';
+      console.log(`   ✅ CASE 1: Known bank domain - PROCESS`);
+    }
+    // Case 2: Not a bank domain, but subject OR body contains bank keywords
+    else if (containsBankKeywords(subject) || containsBankKeywords(body)) {
+      shouldProcess = true;
+      decisionCase = 'Case 2';
+      const inSubject = containsBankKeywords(subject);
+      const inBody = containsBankKeywords(body);
+      reason = `Bank keywords in ${inSubject ? 'subject' : ''} ${inSubject && inBody ? 'and' : ''} ${inBody ? 'body' : ''}`;
+      console.log(`   ✅ CASE 2: ${reason} - PROCESS`);
+    }
+    // Case 3: Need to analyze PDF content
+    else {
+      console.log('   🔍 CASE 3: Checking PDF content...');
+      
+      // Download and analyze first PDF
+      const firstPDF = pdfAttachments[0];
+      console.log(`      📥 Downloading: ${firstPDF.filename}`);
+      
+      const downloadedFile = await downloadAttachment(
+        messageId,
+        firstPDF.attachmentId,
+        firstPDF.filename
+      );
+      
+      // Analyze content
+      const analysis = await analyzePDFContent(downloadedFile.filePath);
+      
+      if (analysis.isBankRelated) {
+        shouldProcess = true;
+        decisionCase = 'Case 3';
+        reason = `PDF content is bank-related (${analysis.confidence} confidence)`;
+        console.log(`   ✅ CASE 3: ${reason} - PROCESS`);
+        
+        // Keep the downloaded file for processing
+        // Return it immediately
+        return {
+          skipped: false,
+          decisionCase,
+          reason,
+          messageId,
+          subject,
+          from,
+          date,
+          senderDomain,
+          attachments: [{
+            ...firstPDF,
+            downloadedFile,
+            analysis,
+          }],
+        };
+      } else {
+        shouldProcess = false;
+        reason = `PDF content not bank-related: ${analysis.reason}`;
+        console.log(`   ❌ CASE 3: ${reason} - IGNORE`);
+        
+        // Clean up downloaded file
+        await fs.unlink(downloadedFile.filePath).catch(() => {});
+      }
+    }
+    
+    // Final decision
+    if (!shouldProcess) {
+      console.log(`   ⏭️  IGNORED: ${reason}`);
+      return {
+        skipped: true,
+        reason,
+        messageId,
+        subject,
+        from,
+        decisionCase: 'Rejected',
+      };
+    }
+    
+    // Download all PDFs for processing (Cases 1 and 2)
+    const downloadedAttachments = [];
+    for (const attachment of pdfAttachments) {
+      console.log(`   📥 Downloading: ${attachment.filename}`);
+      const downloadedFile = await downloadAttachment(
+        messageId,
+        attachment.attachmentId,
+        attachment.filename
+      );
+      
+      downloadedAttachments.push({
+        ...attachment,
+        downloadedFile,
+      });
+    }
+    
+    console.log(`   ✅ Ready to process ${downloadedAttachments.length} PDF(s)`);
+    
+    return {
+      skipped: false,
+      decisionCase,
+      reason,
+      messageId,
+      subject,
+      from,
+      date,
+      senderDomain,
+      attachments: downloadedAttachments,
+    };
+    
+  } catch (error) {
+    console.error(`   ❌ Error processing email:`, error.message);
+    return {
+      skipped: true,
+      reason: `Error: ${error.message}`,
+      messageId,
+      error: error.message,
+    };
+  }
+};
+
+/**
+ * MAIN FUNCTION: Fetch all credit card statements following exact decision flow
  */
 export const fetchAllStatements = async (filters = {}) => {
   try {
-    console.log('\n🔍 Starting Credit Card Statement Search...');
-    console.log('━'.repeat(60));
+    console.log('\n╔' + '═'.repeat(68) + '╗');
+    console.log('║' + ' '.repeat(68) + '║');
+    console.log('║  🚀 CREDIT CARD STATEMENT FETCH - DECISION FLOW' + ' '.repeat(19) + '║');
+    console.log('║' + ' '.repeat(68) + '║');
+    console.log('╚' + '═'.repeat(68) + '╝');
     
+    console.log('\n📋 DECISION FLOW:');
+    console.log('   1️⃣  Fetch emails from last 2 months with PDF attachments');
+    console.log('   2️⃣  Ignore emails without PDF attachments');
+    console.log('   3️⃣  Decision logic:');
+    console.log('       Case 1: Known bank domain → Process');
+    console.log('       Case 2: Bank keywords in subject/body → Process');
+    console.log('       Case 3: Analyze PDF content → Process if bank-related');
+    console.log('   4️⃣  Ignore if none of the above\n');
+    
+    // Step 1: Search emails
     const messages = await searchStatementEmails(filters);
     
     if (!messages || messages.length === 0) {
-      console.log('❌ No emails found matching search criteria');
+      console.log('❌ No emails found in last 2 months with PDF attachments');
       return {
         success: true,
         count: 0,
-        message: 'No credit card statements found',
+        message: 'No emails found',
         statements: [],
         statistics: {
-          searched: 0,
-          skippedBySubject: 0,
-          skippedByAttachment: 0,
-          downloaded: 0,
+          totalEmails: 0,
+          case1: 0,
+          case2: 0,
+          case3: 0,
+          ignored: 0,
+          processed: 0,
           errors: 0,
         },
       };
@@ -536,87 +495,76 @@ export const fetchAllStatements = async (filters = {}) => {
     
     const results = [];
     const statistics = {
-      searched: messages.length,
-      skippedBySubject: 0,
-      skippedByAttachment: 0,
-      downloaded: 0,
+      totalEmails: messages.length,
+      case1: 0,
+      case2: 0,
+      case3: 0,
+      ignored: 0,
+      processed: 0,
       errors: 0,
     };
     
+    // Process each email
     for (let i = 0; i < messages.length; i++) {
-      const message = messages[i];
+      const result = await processEmail(messages[i].id, i + 1, messages.length);
       
-      try {
-        console.log(`\n[${i + 1}/${messages.length}] Processing email...`);
-        
-        const emailData = await extractPDFAttachments(message.id);
-        
-        // Skip if validation failed
-        if (emailData.skipped) {
-          if (emailData.reason.includes('subject')) {
-            statistics.skippedBySubject++;
-          } else {
-            statistics.skippedByAttachment++;
-          }
-          continue;
+      if (result.skipped) {
+        statistics.ignored++;
+        if (result.error) {
+          statistics.errors++;
         }
+      } else {
+        // Count by decision case
+        if (result.decisionCase === 'Case 1') statistics.case1++;
+        else if (result.decisionCase === 'Case 2') statistics.case2++;
+        else if (result.decisionCase === 'Case 3') statistics.case3++;
         
-        // Download each valid attachment
-        for (const attachment of emailData.attachments) {
-          const downloadedFile = await downloadAttachment(
-            message.id,
-            attachment.attachmentId,
-            attachment.filename
-          );
-          
+        statistics.processed++;
+        
+        // Add to results for further processing
+        for (const attachment of result.attachments) {
           results.push({
-            messageId: message.id,
-            subject: emailData.subject,
-            from: emailData.from,
-            date: emailData.date,
-            file: downloadedFile,
-            validation: {
-              subjectScore: emailData.validation.score,
-              filenameScore: attachment.validation.score,
-              isFromBank: emailData.isFromBank,
-            },
+            messageId: result.messageId,
+            subject: result.subject,
+            from: result.from,
+            date: result.date,
+            senderDomain: result.senderDomain,
+            file: attachment.downloadedFile,
+            decisionCase: result.decisionCase,
+            reason: result.reason,
+            pdfAnalysis: attachment.analysis,
           });
-          
-          statistics.downloaded++;
         }
-      } catch (error) {
-        console.error(`❌ Error processing message ${message.id}:`, error.message);
-        statistics.errors++;
       }
     }
     
     // Print summary
-    console.log('\n' + '━'.repeat(60));
-    console.log('📊 SEARCH SUMMARY:');
-    console.log('━'.repeat(60));
-    console.log(`📧 Total emails searched:           ${statistics.searched}`);
-    console.log(`⏭️  Skipped (invalid subject):       ${statistics.skippedBySubject}`);
-    console.log(`⏭️  Skipped (no valid attachments):  ${statistics.skippedByAttachment}`);
-    console.log(`✅ Valid statements downloaded:     ${statistics.downloaded}`);
-    console.log(`❌ Errors:                          ${statistics.errors}`);
-    console.log('━'.repeat(60));
+    console.log('\n╔' + '═'.repeat(68) + '╗');
+    console.log('║  📊 PROCESSING SUMMARY' + ' '.repeat(45) + '║');
+    console.log('╠' + '═'.repeat(68) + '╣');
+    console.log(`║  Total emails searched:              ${String(statistics.totalEmails).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ✅ Case 1 (Bank domain):             ${String(statistics.case1).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ✅ Case 2 (Keywords in sub/body):    ${String(statistics.case2).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ✅ Case 3 (PDF content analysis):    ${String(statistics.case3).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ⏭️  Ignored:                          ${String(statistics.ignored).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  📥 Total PDFs to process:            ${String(statistics.processed).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log(`║  ❌ Errors:                            ${String(statistics.errors).padStart(4)} ` + ' '.repeat(26) + '║');
+    console.log('╚' + '═'.repeat(68) + '╝\n');
     
     return {
       success: true,
       count: results.length,
       statements: results,
-      filtered: statistics.skippedBySubject + statistics.skippedByAttachment,
-      total: messages.length,
       statistics,
     };
   } catch (error) {
-    console.error('❌ Error fetching statements:', error);
+    console.error('❌ Fatal error in fetchAllStatements:', error);
     throw error;
   }
 };
 
 /**
- * Get list of common bank email domains
+ * Get list of bank email domains
  */
 export const getBankEmailDomains = () => {
   return BANK_DOMAINS;
