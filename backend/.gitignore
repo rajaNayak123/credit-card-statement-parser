@@ -149,4 +149,4 @@ coverage/
 *.pid
 *.seed
 *.pid.lock
-backend/src/config/gmail-token.json
+backend/src/config/gmail-token.jsonbackend/src/config/gmail-token.json
