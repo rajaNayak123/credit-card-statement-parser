@@ -6,3 +6,7 @@ export const authClient = createAuthClient({
     credentials: "include",
   },
 });
+
+export function getAuthHeaders(): HeadersInit {
+  return {};
+}
