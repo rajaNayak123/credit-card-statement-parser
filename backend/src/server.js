@@ -3,22 +3,19 @@ dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { connectDB } from './config/db.js';
 import statementRoutes from './routes/statementRoutes.js';
 import gmailRoutes from './routes/gmailRoutes.js';
+import authRoutes from './routes/authRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { createAuth } from './config/auth.js';
-import { toNodeHandler } from 'better-auth/node';
 
 const app = express();
 
-// Call connectDB and wait for connection before initializing auth
+// Connect to MongoDB
 await connectDB();
 
-// Initialize auth after database connection is established
-const auth = createAuth();
-
-// IMPROVED CORS Configuration for Postman Testing
+// CORS Configuration for frontend
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -40,27 +37,20 @@ app.use(
         // In production, use: callback(new Error('Not allowed by CORS'));
       }
     },
-    credentials: true,
+    credentials: true, // Important: allows cookies to be sent
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Origin', 'Accept'],
     exposedHeaders: ['Set-Cookie']
   })
 );
 
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser()); // Important: parse cookies
 
 // Routes
-// Better Auth handler - wrap with toNodeHandler for Express compatibility
-app.use('/api/auth', async (req, res, next) => {
-  try {
-    await toNodeHandler(auth)(req, res, next);
-  } catch (error) {
-    console.error('Better Auth handler error:', error);
-    next(error);
-  }
-});
-
+app.use('/api/auth', authRoutes);
 app.use('/api/statements', statementRoutes);
 app.use('/api/gmail', gmailRoutes);
 
@@ -73,11 +63,11 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Error handler (must be last)
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 8000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Gmail OAuth callback: http://localhost:${PORT}/api/gmail/oauth/callback`);
 });
