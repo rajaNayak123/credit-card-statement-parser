@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { authClient } from "@/lib/auth";
+import { authApi } from "@/lib/auth";
 
 export default function LogoutButton() {
   const router = useRouter();
@@ -11,12 +11,14 @@ export default function LogoutButton() {
   const handleLogout = async () => {
     setLoading(true);
     try {
-      await authClient.signOut();
+      await authApi.logout();
       router.push("/login");
       router.refresh();
     } catch (error) {
       console.error("Logout error:", error);
-      setLoading(false);
+      // Even if logout fails, redirect to login
+      router.push("/login");
+      router.refresh();
     }
   };
 
