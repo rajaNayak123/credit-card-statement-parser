@@ -219,6 +219,8 @@ export default function DashboardPage() {
                 <tr className="text-[10px] uppercase text-zinc-400 font-black tracking-widest border-b border-zinc-100 dark:border-zinc-800">
                   <th className="px-6 py-4">File Details</th>
                   <th className="px-6 py-4">Date Parsed</th>
+                  <th className="px-6 py-4">Bank / Period</th>
+                  <th className="px-6 py-4">Points Summary</th>
                   <th className="px-6 py-4">Source</th>
                   <th className="px-6 py-4 text-right">Options</th>
                 </tr>
@@ -226,7 +228,7 @@ export default function DashboardPage() {
               <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
                 {statements.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center">
+                    <td colSpan={6} className="px-6 py-12 text-center">
                       <p className="text-zinc-400 text-sm">No statements parsed yet. Use the upload or sync feature to begin.</p>
                     </td>
                   </tr>
@@ -242,7 +244,23 @@ export default function DashboardPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-xs text-zinc-500 font-medium">
-                        {new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {new Date(s.uploadDate || Date.now()).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{s.bankName || 'Unknown Bank'}</p>
+                        <p className="text-[10px] text-zinc-500 font-medium truncate max-w-[150px]">{s.statementPeriod || 'Unknown period'}</p>
+                      </td>
+                      <td className="px-6 py-4 text-xs">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex justify-between w-32">
+                            <span className="text-zinc-500">Earned:</span>
+                            <span className="font-bold text-green-600 dark:text-green-400">+{s.rewardPoints?.earned ?? 0}</span>
+                          </div>
+                          <div className="flex justify-between w-32 border-t border-zinc-100 dark:border-zinc-800 pt-1">
+                            <span className="text-zinc-500">Closing:</span>
+                            <span className="font-bold text-blue-600 dark:text-blue-400">{s.rewardPoints?.closing ?? 0}</span>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tighter ${
