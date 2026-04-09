@@ -9,7 +9,6 @@ export default function SignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [dob, setDob] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -19,8 +18,8 @@ export default function SignupPage() {
     setLoading(true);
 
     // Validate fields before sending
-    if (!name || !email || !password || !dob) {
-      setError("Please fill in all fields including Date of Birth.");
+    if (!name || !email || !password) {
+      setError("Please fill in all fields.");
       setLoading(false);
       return;
     }
@@ -38,7 +37,6 @@ export default function SignupPage() {
         name,
         email,
         password,
-        dob,
       });
 
       if (result.success) {
@@ -102,23 +100,6 @@ export default function SignupPage() {
               required 
               minLength={6}
             />
-          </div>
-          
-          <div className="space-y-1">
-            <label className="text-sm text-gray-600 dark:text-gray-400 font-medium">
-              Date of Birth (DD-MM-YYYY)
-            </label>
-            <input 
-              type="text" 
-              placeholder="15-08-1990" 
-              value={dob} 
-              onChange={(e) => setDob(e.target.value)} 
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent" 
-              required 
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Format: DD-MM-YYYY or DD-MM
-            </p>
           </div>
 
           <button 

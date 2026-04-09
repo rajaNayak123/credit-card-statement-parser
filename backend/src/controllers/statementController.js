@@ -28,9 +28,18 @@ export const uploadStatement = async (req, res, next) => {
     });
     await statement.save();
     
+    const password = req.body.password;
+    if (!password) {
+      if (filePath) await fs.unlink(filePath).catch(() => {});
+      return res.status(400).json({
+        success: false,
+        error: 'PDF Password is required',
+      });
+    }
+    
     // Step 1: Parse PDF
-    const pdfData = await parsePDF(filePath);
-    const metadata = await extractPDFMetadata(filePath);
+    const pdfData = await parsePDF(filePath, password);
+    const metadata = await extractPDFMetadata(filePath, password);
     
     
     // LOG RAW PDF DATA

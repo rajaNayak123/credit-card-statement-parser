@@ -10,13 +10,14 @@ const pdfExtract = new PDFExtract();
  * Parse PDF and extract text content
  * Automatically detects and handles scanned PDFs with OCR
  */
-export const parsePDF = async (filePath) => {
+export const parsePDF = async (filePath, password) => {
   try {
     console.log('\n=== Starting PDF Parsing ===');
     console.log(`📄 File: ${filePath}`);
     
     // First, try standard text extraction using pdf.js-extract
-    const data = await pdfExtract.extract(filePath);
+    const options = password ? { password } : {};
+    const data = await pdfExtract.extract(filePath, options);
     
     // Extract text from all pages
     let text = '';
@@ -145,10 +146,11 @@ const parsePDFWithOCR = async (filePath, pdfData) => {
 /**
  * Extract additional metadata from PDF
  */
-export const extractPDFMetadata = async (filePath) => {
+export const extractPDFMetadata = async (filePath, password) => {
   try {
     const dataBuffer = await fs.readFile(filePath);
-    const pdfDoc = await PDFDocument.load(dataBuffer);
+    const options = password ? { password } : {};
+    const pdfDoc = await PDFDocument.load(dataBuffer, options);
     
     return {
       pageCount: pdfDoc.getPageCount(),

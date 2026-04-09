@@ -8,7 +8,7 @@ export const authApi = {
   /**
    * Sign up a new user
    */
-  signup: async (data: { name: string; email: string; password: string; dob: string }) => {
+  signup: async (data: { name: string; email: string; password: string }) => {
     const res = await fetch(`${API_BASE}/auth/signup`, {
       method: "POST",
       headers: {
@@ -88,7 +88,7 @@ export const authApi = {
   /**
    * Update user profile
    */
-  updateProfile: async (data: { name?: string; dob?: string }) => {
+  updateProfile: async (data: { name?: string }) => {
     const res = await fetch(`${API_BASE}/auth/me`, {
       method: "PUT",
       headers: {

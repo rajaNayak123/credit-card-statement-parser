@@ -52,9 +52,12 @@ export const gmailApi = {
  * Statements API helpers
  */
 export const statementsApi = {
-  upload: async (file: File) => {
+  upload: async (file: File, password?: string) => {
     const formData = new FormData();
     formData.append("statement", file);
+    if (password) {
+      formData.append("password", password);
+    }
 
     // Note: We don't set Content-Type header here; fetch sets it automatically for FormData
     const res = await fetchWithAuth("/statements/upload", {

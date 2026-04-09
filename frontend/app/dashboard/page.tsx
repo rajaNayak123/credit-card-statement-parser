@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [statements, setStatements] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [fetchingGmail, setFetchingGmail] = useState(false);
+  const [pdfPassword, setPdfPassword] = useState("");
   const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
 
   /**
@@ -70,12 +71,19 @@ export default function DashboardPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!pdfPassword.trim()) {
+      showStatus("Please enter the PDF password first before selecting a file.", "error");
+      e.target.value = "";
+      return;
+    }
+
     setUploading(true);
     try {
-      const result = await statementsApi.upload(file);
+      const result = await statementsApi.upload(file, pdfPassword);
       if (result.success) {
         showStatus("Statement uploaded and parsed successfully!", "success");
         loadData(); // Refresh the list
+        setPdfPassword(""); // Clear the password after successful upload
       }
     } catch (err: any) {
       showStatus(err.message || "Upload failed", "error");
@@ -177,8 +185,18 @@ export default function DashboardPage() {
               <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
             </div>
             <h3 className="font-bold dark:text-white mb-2">Manual Upload</h3>
-            <p className="text-xs text-zinc-500 mb-6 px-4">Drag and drop your credit card PDF or image statements here.</p>
+            <p className="text-xs text-zinc-500 mb-4 px-4">Drag and drop your credit card PDF or image statements here.</p>
             
+            <div className="w-full mb-4 px-4">
+              <input
+                type="password"
+                placeholder="PDF Password (Required)"
+                value={pdfPassword}
+                onChange={(e) => setPdfPassword(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg dark:bg-zinc-800 dark:border-zinc-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
             <input type="file" id="dash-upload" hidden onChange={handleUpload} disabled={uploading} accept=".pdf,image/*" />
             <label 
               htmlFor="dash-upload" 
@@ -186,6 +204,10 @@ export default function DashboardPage() {
             >
               {uploading ? "Processing..." : "Select Statement"}
             </label>
+            <p className="text-[10px] text-zinc-400 mt-3 flex items-center justify-center gap-1">
+              <svg className="w-3 h-3 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              Password is required to process the PDF
+            </p>
           </div>
 
           {/* Stats Summary Card */}

@@ -25,12 +25,6 @@ const userSchema = new mongoose.Schema(
       minlength: [6, "Password must be at least 6 characters"],
       select: false, // Don't return password by default
     },
-    dob: {
-      type: String,
-      required: [true, "Please provide your date of birth"],
-      trim: true,
-      // Accepts formats: dd-mm-yyyy, dd-mm, dd/mm/yyyy, yyyy-mm-dd
-    },
     isActive: {
       type: Boolean,
       default: true,

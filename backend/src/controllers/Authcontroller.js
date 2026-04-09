@@ -7,13 +7,13 @@ import { generateToken, generateRefreshToken } from "../services/jwt.js";
  */
 export const signup = async (req, res, next) => {
   try {
-    const { name, email, password, dob } = req.body;
+    const { name, email, password } = req.body;
 
     // Validate required fields
-    if (!name || !email || !password || !dob) {
+    if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        error: "Please provide name, email, password, and date of birth",
+        error: "Please provide name, email, and password",
       });
     }
 
@@ -27,30 +27,18 @@ export const signup = async (req, res, next) => {
       });
     }
 
-    // Validate DOB format (basic check)
-    const dobRegex =
-      /^(\d{2}[-/]\d{2}[-/]\d{4}|\d{2}[-/]\d{2}|\d{4}[-/]\d{2}[-/]\d{2}|\d{4})$/;
-    if (!dobRegex.test(dob)) {
-      return res.status(400).json({
-        success: false,
-        error:
-          "Invalid date of birth format. Use dd-mm-yyyy, dd-mm, or similar",
-      });
-    }
-
     // Create user
     const user = await User.create({
       name,
       email,
       password,
-      dob,
     });
 
     // Generate tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    console.log(`✅ New user registered: ${user.email} (DOB: ${user.dob})`);
+    console.log(`✅ New user registered: ${user.email}`);
 
     // Set JWT in httpOnly cookie so browser sends it with credentials: 'include'
     const cookieMaxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -70,7 +58,6 @@ export const signup = async (req, res, next) => {
           id: user._id,
           name: user.name,
           email: user.email,
-          dob: user.dob,
           createdAt: user.createdAt,
         },
         token,
@@ -171,7 +158,6 @@ export const signin = async (req, res, next) => {
           id: user._id,
           name: user.name,
           email: user.email,
-          dob: user.dob,
         },
         token,
         refreshToken,
@@ -207,11 +193,10 @@ export const getMe = async (req, res, next) => {
  */
 export const updateProfile = async (req, res, next) => {
   try {
-    const { name, dob } = req.body;
+    const { name } = req.body;
 
     const updateData = {};
     if (name) updateData.name = name;
-    if (dob) updateData.dob = dob;
 
     const user = await User.findByIdAndUpdate(req.user._id, updateData, {
       new: true,
