@@ -106,6 +106,7 @@ export const fetchStatementsFromGmail = async (req, res, next) => {
       after: req.query.after,
       before: req.query.before,
       maxResults: parseInt(req.query.maxResults) || 500,
+      password: req.user.defaultPdfPassword,
     };
     
     console.log('\n🚀 Starting Gmail fetch for user:', userId);
@@ -177,7 +178,7 @@ export const fetchStatementsFromGmail = async (req, res, next) => {
         } else {
           // Parse and validate for Cases 1 and 2
           console.log('   📖 Step 1/3: Parsing PDF...');
-          pdfData = await parsePDF(stmt.file.filePath);
+          pdfData = await parsePDF(stmt.file.filePath, filters.password);
           console.log(`   ✅ Extracted ${pdfData.text.length} characters from ${pdfData.numPages} page(s)`);
           
           console.log('   🔍 Step 2/3: Validating content...');

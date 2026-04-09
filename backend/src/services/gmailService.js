@@ -87,6 +87,9 @@ const getLast2MonthsDateRange = () => {
 const buildSearchQuery = (filters = {}) => {
   const queries = [];
   
+  // Search in all folders including Spam
+  queries.push('in:anywhere');
+  
   // MANDATORY: Must have PDF attachment (Step 2)
   queries.push('has:attachment');
   queries.push('filename:pdf');
@@ -158,6 +161,7 @@ export const searchStatementEmails = async (filters = {}) => {
       userId: 'me',
       q: query,
       maxResults: filters.maxResults || 500,
+      includeSpamTrash: true,
     });
     
     const messages = response.data.messages || [];
@@ -232,12 +236,12 @@ const downloadAttachment = async (messageId, attachmentId, filename) => {
  * Analyze PDF content to check if it's bank-related
  * Step 3 - Case 3
  */
-const analyzePDFContent = async (filePath) => {
+const analyzePDFContent = async (filePath, password) => {
   try {
     console.log('      📖 Analyzing PDF content...');
     
     // Parse PDF
-    const pdfData = await parsePDF(filePath);
+    const pdfData = await parsePDF(filePath, password);
     
     if (!pdfData.text || pdfData.text.length < 100) {
       console.log('      ❌ PDF has insufficient text');
@@ -269,7 +273,7 @@ const analyzePDFContent = async (filePath) => {
 /**
  * Process single email following the exact decision flow
  */
-const processEmail = async (messageId, index, total) => {
+const processEmail = async (messageId, index, total, password) => {
   console.log(`\n[${ index}/${total}] 📨 Processing email...`);
   
   try {
@@ -362,7 +366,7 @@ const processEmail = async (messageId, index, total) => {
       );
       
       // Analyze content
-      const analysis = await analyzePDFContent(downloadedFile.filePath);
+      const analysis = await analyzePDFContent(downloadedFile.filePath, password);
       
       if (analysis.isBankRelated) {
         shouldProcess = true;
@@ -506,7 +510,7 @@ export const fetchAllStatements = async (filters = {}) => {
     
     // Process each email
     for (let i = 0; i < messages.length; i++) {
-      const result = await processEmail(messages[i].id, i + 1, messages.length);
+      const result = await processEmail(messages[i].id, i + 1, messages.length, filters.password);
       
       if (result.skipped) {
         statistics.ignored++;

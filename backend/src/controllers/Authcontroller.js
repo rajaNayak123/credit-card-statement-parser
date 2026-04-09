@@ -58,6 +58,7 @@ export const signup = async (req, res, next) => {
           id: user._id,
           name: user.name,
           email: user.email,
+          defaultPdfPassword: user.defaultPdfPassword,
           createdAt: user.createdAt,
         },
         token,
@@ -158,6 +159,7 @@ export const signin = async (req, res, next) => {
           id: user._id,
           name: user.name,
           email: user.email,
+          defaultPdfPassword: user.defaultPdfPassword,
         },
         token,
         refreshToken,
@@ -193,10 +195,11 @@ export const getMe = async (req, res, next) => {
  */
 export const updateProfile = async (req, res, next) => {
   try {
-    const { name } = req.body;
+    const { name, defaultPdfPassword } = req.body;
 
     const updateData = {};
-    if (name) updateData.name = name;
+    if (name !== undefined) updateData.name = name;
+    if (defaultPdfPassword !== undefined) updateData.defaultPdfPassword = defaultPdfPassword;
 
     const user = await User.findByIdAndUpdate(req.user._id, updateData, {
       new: true,

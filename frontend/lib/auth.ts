@@ -88,7 +88,7 @@ export const authApi = {
   /**
    * Update user profile
    */
-  updateProfile: async (data: { name?: string }) => {
+  updateProfile: async (data: { name?: string; defaultPdfPassword?: string }) => {
     const res = await fetch(`${API_BASE}/auth/me`, {
       method: "PUT",
       headers: {
